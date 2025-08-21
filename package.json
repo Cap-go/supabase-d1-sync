@@ -4,19 +4,19 @@
   "private": true,
   "scripts": {
     "deploy:secrets": "wrangler secret bulk .env",
-    "deploy": "wrangler deploy",
+    "deploy": "wrangler deploy --minify",
     "dev": "wrangler dev",
     "start": "wrangler dev"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.4",
-    "postgres": "^3.4.5"
+    "@supabase/supabase-js": "^2.56.0",
+    "postgres": "^3.4.7"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250426.0",
-    "@types/node": "^22.15.2",
+    "@cloudflare/workers-types": "^4.20250821.0",
+    "@types/node": "^22.17.2",
     "bun-types": "latest",
-    "typescript": "^5.8.3",
-    "wrangler": "^4.13.2"
+    "typescript": "^5.9.2",
+    "wrangler": "^4.32.0"
   }
 }

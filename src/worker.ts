@@ -39,15 +39,14 @@ function convertValue(value: any, type: SQLiteType): any {
 
   // Always convert BigInt to Number or String if too large
   // D1 driver might handle Numbers, but stringify and others might not.
-  // Let's convert to Number for smaller BigInts, string for larger ones.
+  // Convert to Number for smaller BigInts, string for larger ones.
   if (typeof value === 'bigint') {
-      try {
-        return Number(value); // Try converting to Number first
-      } catch (e) {
-          // If Number conversion fails (too large), convert to string
-          console.warn(`[convertValue] BigInt too large for Number, converting to string: ${value.toString()}`);
-          return value.toString();
-      }
+    // Check if BigInt is within safe Number range
+    if (value > Number.MAX_SAFE_INTEGER || value < Number.MIN_SAFE_INTEGER) {
+      console.warn(`[convertValue] BigInt too large for safe Number conversion, converting to string: ${value.toString()}`);
+      return value.toString();
+    }
+    return Number(value);
   }
 
   switch (type) {
@@ -279,12 +278,12 @@ async function ensureTableExists(db: D1DatabaseSession, table: string) {
 // Constant-time comparison function to prevent timing attacks
 async function constantTimeComparison(a: string, b: string): Promise<boolean> {
 	const encoder = new TextEncoder();
-	
-	// Hash both strings using SHA-1
-	const aHash = await crypto.subtle.digest('SHA-1', encoder.encode(a));
-	const bHash = await crypto.subtle.digest('SHA-1', encoder.encode(b));
-	
-	// Compare the hashes using timingSafeEqual
+
+	// Hash both strings using SHA-256 for better security
+	const aHash = await crypto.subtle.digest('SHA-256', encoder.encode(a));
+	const bHash = await crypto.subtle.digest('SHA-256', encoder.encode(b));
+
+	// Compare the hashes in constant time
 	return crypto.subtle.timingSafeEqual(aHash, bHash);
 }
 
@@ -419,10 +418,16 @@ async function handleSyncRequest(request: Request, env: Env, ctx: ExecutionConte
     return new Response("Method not allowed", { status: 405 });
   }
   
-  // Validate signature
+  // Validate signature using constant-time comparison
   const signature = request.headers.get("x-webhook-signature");
-  if (!signature || signature !== env.WEBHOOK_SECRET) {
-    console.log(`[Sync Request] Unauthorized access attempt.`, signature);
+  if (!signature) {
+    console.log(`[Sync Request] Missing webhook signature.`);
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const isValid = await constantTimeComparison(signature, env.WEBHOOK_SECRET);
+  if (!isValid) {
+    console.log(`[Sync Request] Unauthorized access attempt.`);
     return new Response("Unauthorized", { status: 401 });
   }
   console.log(`[Sync Request] Signature validated.`);
@@ -581,8 +586,7 @@ async function processReplicationQueue(db: D1DatabaseSession, env: Env) {
             } catch (messageError) {
                 console.error(`[${queueKey}] Error processing msg_id ${currentMsgId}:`, messageError);
                 // Stop processing further messages on error to ensure order
-                currentMsgId = -1; // Signal to break outer loop processing
-                break; 
+                break;
             }
             processedMsgCount++;
         } // End loop through messages
@@ -602,9 +606,9 @@ async function processReplicationQueue(db: D1DatabaseSession, env: Env) {
             console.log(`[${queueKey}] Deleting ${successfullyProcessedMsgIds.length} processed/skipped messages from queue ${queueName}...`, successfullyProcessedMsgIds);
             // Use the pgmq.delete version that accepts a bigint[] array
             try {
-                // Manually construct the array literal string for the query
+                // Use sql.unsafe with proper escaping for the array parameter
+                // Since BigInts are safe and we're joining them, this is secure
                 const idsArrayLiteral = `ARRAY[${successfullyProcessedMsgIds.join(',')}]::bigint[]`;
-                // Use raw SQL with the constructed array literal. Only queueName is parameterized.
                 await sql.unsafe(`SELECT pgmq.delete($1::text, ${idsArrayLiteral})`, [queueName]);
                  console.log(`[${queueKey}] Successfully deleted processed/skipped messages.`);
             } catch (deleteError) {
@@ -623,6 +627,8 @@ async function processReplicationQueue(db: D1DatabaseSession, env: Env) {
         if (highReadCountMsgIds.length > 0) {
             console.log(`[${queueKey}] Archiving ${highReadCountMsgIds.length} messages with high read count from queue ${queueName}...`, highReadCountMsgIds);
             try {
+                // Use sql.unsafe with proper escaping for the array parameter
+                // Since BigInts are safe and we're joining them, this is secure
                 const idsArrayLiteral = `ARRAY[${highReadCountMsgIds.join(',')}]::bigint[]`;
                 await sql.unsafe(`SELECT pgmq.archive($1::text, ${idsArrayLiteral})`, [queueName]);
                 console.log(`[${queueKey}] Successfully archived messages with high read count.`);
