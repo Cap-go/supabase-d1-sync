@@ -9,7 +9,7 @@
     "start": "wrangler dev"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.56.0",
+    "@supabase/supabase-js": "^2.57.4",
     "postgres": "^3.4.7"
   },
   "devDependencies": {
@@ -17,6 +17,6 @@
     "@types/node": "^22.17.2",
     "bun-types": "latest",
     "typescript": "^5.9.2",
-    "wrangler": "^4.32.0"
+    "wrangler": "^4.37.0"
   }
 }
